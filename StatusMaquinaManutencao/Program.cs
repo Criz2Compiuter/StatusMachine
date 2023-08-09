@@ -1,5 +1,9 @@
-﻿using System.Net;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
 using System.Net.Mail;
+using System.Threading;
 using Telegram.Bot;
 using Telegram.Bot.Args;
 using Telegram.Bot.Types.Enums;
@@ -15,24 +19,25 @@ namespace TelegramBotExample {
             botClient.OnMessage += Bot_OnMessage;
             botClient.StartReceiving();
             ScheduleDailyTask();
+            PerformDailyTask(null);
             Console.ReadLine();
             botClient.StopReceiving();
         }
 
         private static void SendBackupByEmail(string filePath, List<string> recipientAddresses) {
             try {
-                var fromAddress = new MailAddress("matheus.adryan@mirvibrasil.com", "matheus.adryan@mirvibrasil.com");
+                var fromAddress = new MailAddress("cris.ferreirak10@gmail.com", "Cristian Ferreira");
 
                 string subject = "backup do dia " + DateTime.Now.ToString("dd-MM-yyyy");
                 string body = "Este é o backup diário dos dados.\nPor favor, verifique o anexo para mais detalhes.";
 
                 var smtpClient = new SmtpClient {
-                    Host = "smtp1.mirvibrasil.com",
-                    Port = 25,
+                    Host = "smtp.gmail.com", // Servidor SMTP do Thunderbird
+                    Port = 587,
                     EnableSsl = true,
                     DeliveryMethod = SmtpDeliveryMethod.Network,
                     UseDefaultCredentials = false,
-                    Credentials = new NetworkCredential(fromAddress.Address, "")
+                    Credentials = new NetworkCredential(fromAddress.Address, "agij poau pkhd nceb")
                 };
 
                 using (var message = new MailMessage { From = fromAddress, Subject = subject, Body = body }) {
@@ -40,19 +45,21 @@ namespace TelegramBotExample {
                         message.To.Add(new MailAddress(recipientAddress));
                     }
 
-                    message.Attachments.Add(new Attachment(filePath));
+                    var attachment = new Attachment(filePath);
+                    message.Attachments.Add(attachment);
+
                     smtpClient.Send(message);
                 }
             }
             catch (Exception ex) {
-                Console.WriteLine($"Error sending email: {ex.Message}");
+                Console.WriteLine($"Erro ao enviar e-mail: {ex.Message}");
             }
         }
-        private static async void Bot_OnMessage(object sender, MessageEventArgs e) {
-            if (e.Message.Type == MessageType.Text) {
-                var chatId = e.Message.Chat.Id;
-                var messageText = e.Message.Text;
 
+        private static async void Bot_OnMessage(object sender, MessageEventArgs e) {
+            var chatId = e.Message.Chat.Id;
+            var messageText = e.Message.Text;
+            if (e.Message.Type == MessageType.Text) {
                 if (messageText == "/Comecar") {
                     var machineGroups = new List<List<string>>
                     {
@@ -87,7 +94,8 @@ namespace TelegramBotExample {
                         machineStatus.Remove(chatId);
 
                         string currentTime = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss");
-                        string message = $"Maq.: {machineName}\nStatus: {status}\nDescricao: {additionalInfo}\nTime: {currentTime}";
+                        string message = $"Maq.: {machineName}\nStatus: {status}\nDescricao: {additionalInfo}\nTime: {currentTime} \n  ---------------";
+                        LogMessage($"{message}");
 
                         await botClient.SendTextMessageAsync(chatId, message, replyToMessageId: e.Message.MessageId);
                     }
@@ -118,11 +126,30 @@ namespace TelegramBotExample {
             return validMachineNames.Contains(name);
         }
 
+
         private static void PerformDailyTask(object state) {
-            var backupFolder = "C:\\Users\\Cristian\\PastaBackup";
+            var backupFolder = "C:\\Users\\Cristian\\Gmail\\Backup";
             var backupFilename = $"Backup_{DateTime.Now:yyyyMMdd}.txt";
 
             var backupData = new List<string>();
+
+            // Caminho completo para o arquivo de backup
+            string backupFilePath = Path.Combine(backupFolder, backupFilename);
+
+            if (File.Exists(backupFilePath)) {
+                backupData.AddRange(File.ReadAllLines(backupFilePath));
+            }
+            else {
+                Console.WriteLine($"Arquivo de backup '{backupFilename}' não encontrado.");
+            }
+            // Ler o conteúdo do arquivo de log e adicionar ao backupData
+            var logFolderPath = "C:\\Users\\Cristian\\Gmail\\Log";
+            var logFileName = $"Log_{DateTime.Now:yyyyMMdd}.txt";
+            var logFilePath = Path.Combine(logFolderPath, logFileName);
+
+            if (File.Exists(logFilePath)) {
+                backupData.AddRange(File.ReadAllLines(logFilePath));
+            }
 
             foreach (var entry in machineStatus) {
                 backupData.Add(entry.Value);
@@ -131,42 +158,37 @@ namespace TelegramBotExample {
             File.WriteAllLines(Path.Combine(backupFolder, backupFilename), backupData);
 
             List<string> recipients = new List<string>
-                {
-                    "lucas.william@mirvibrasil.com"
-                };
+            {
+                "almoxarifadosistema@gmail.com"
+            };
 
             SendBackupByEmail(Path.Combine(backupFolder, backupFilename), recipients);
-            try {
-                var smtpClient = new SmtpClient("smtp1.mirvibrasil.com") {
-                    Port = 25,
-                    Credentials = new NetworkCredential("matheus.adryan@mirvibrasil.com", ""),
-                    EnableSsl = true,
-                };
 
-                var mail = new MailMessage {
-                    From = new MailAddress("matheus.adryan@mirvibrasil.com"),
-                    Subject = "Backup de Dados Diário",
-                    Body = "Anexos: Dados do Backup",
-                };
-
-                foreach (var recipientAddress in recipients) {
-                    mail.To.Add(recipientAddress);
-                }
-
-                mail.Attachments.Add(new Attachment(Path.Combine(backupFolder, backupFilename)));
-
-                smtpClient.Send(mail);
-            }
-            catch (Exception ex) {
-                Console.WriteLine("Erro ao enviar e-mail: " + ex.Message);
-            }
+            Console.WriteLine($"Backup e e-mail enviados às {DateTime.Now}");
         }
 
         private static void ScheduleDailyTask() {
             var now = DateTime.Now;
-            var timeUntilMidnight = TimeSpan.FromMinutes(1);
+            var timeUntilNextMinute = TimeSpan.FromMinutes(1);
 
-            var timer = new Timer(PerformDailyTask, null, timeUntilMidnight, TimeSpan.FromMinutes(1));
+            var timer = new Timer(PerformDailyTask, null, timeUntilNextMinute, TimeSpan.FromMinutes(1));
+        }
+
+        private static void LogMessage(string message) {
+            var logFolderPath = "C:\\Users\\Cristian\\Gmail\\Log";
+            var logFileName = $"Log_{DateTime.Now:yyyyMMdd}.txt";
+            var logFilePath = Path.Combine(logFolderPath, logFileName);
+
+            try {
+                Directory.CreateDirectory(logFolderPath);
+
+                using (var writer = new StreamWriter(logFilePath, true)) {
+                    writer.WriteLine(message);
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"Erro ao registrar mensagem: {ex.Message}");
+            }
         }
     }
 }
