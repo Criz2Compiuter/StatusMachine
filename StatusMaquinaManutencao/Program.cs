@@ -13,21 +13,24 @@ namespace TelegramBotExample {
     class Program {
         private static TelegramBotClient botClient;
         private static Dictionary<long, string> machineStatus = new Dictionary<long, string>();
+        private static Timer _logEmailTimer;
 
         static void Main() {
             botClient = new TelegramBotClient("6443939914:AAG0BMQ0t_svMoqKqeAALnYLWD0b1OrvnxQ");
             botClient.OnMessage += Bot_OnMessage;
             botClient.StartReceiving();
+            TimeSpan timeUntil8AM = CalculateTimeUntil8AM();
+            _logEmailTimer = new Timer(SendLogByEmailCallback, null, timeUntil8AM, Timeout.InfiniteTimeSpan);
             PerformDailyTask(null);
             Console.ReadLine();
             botClient.StopReceiving();
         }
 
-        private static void SendBackupByEmail(string filePath, List<string> recipientAddresses) {
+        private static void SendLogByEmail(string logFilePath, List<string> recipientAddresses) {
             var fromAddress = new MailAddress("manutencaomirvi@gmail.com", "mirvi manutenção");
 
-            string subject = "backup do dia " + DateTime.Now.ToString("dd-MM-yyyy");
-            string body = "Este é o backup diário dos dados.\nPor favor, verifique o anexo para mais detalhes.";
+            string subject = "Log do dia " + DateTime.Now.ToString("dd-MM-yyyy");
+            string body = "Este é o log diário do sistema.\nPor favor, verifique o anexo para mais detalhes.";
 
             var smtpClient = new SmtpClient {
                 Host = "smtp.gmail.com",
@@ -38,28 +41,25 @@ namespace TelegramBotExample {
                 Credentials = new NetworkCredential(fromAddress.Address, "qcrt jszl vpnr ynbf")
             };
 
-            while (true) {
-                try {
-                    using (var message = new MailMessage { From = fromAddress, Subject = subject, Body = body }) {
-                        foreach (var recipientAddress in recipientAddresses) {
-                            message.To.Add(new MailAddress(recipientAddress));
-                        }
-
-                        var attachment = new Attachment(filePath);
-                        message.Attachments.Add(attachment);
-
-                        smtpClient.Send(message);
-
-                        Console.WriteLine($"enviado! {DateTime.Now}");
+            try {
+                using (var message = new MailMessage { From = fromAddress, Subject = subject, Body = body }) {
+                    foreach (var recipientAddress in recipientAddresses) {
+                        message.To.Add(new MailAddress(recipientAddress));
                     }
-                }
-                catch (Exception ex) {
-                    Console.WriteLine($"Erro ao enviar e-mail: {ex.Message}");
-                }
 
-                Thread.Sleep(TimeSpan.FromMinutes(1));
+                    var attachment = new Attachment(logFilePath);
+                    message.Attachments.Add(attachment);
+
+                    smtpClient.Send(message);
+
+                    Console.WriteLine($"Backup enviado por e-mail! {DateTime.Now}");
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"Erro ao enviar e-mail de log: {ex.Message}");
             }
         }
+
 
         private static async void Bot_OnMessage(object sender, MessageEventArgs e) {
             var chatId = e.Message.Chat.Id;
@@ -101,7 +101,6 @@ namespace TelegramBotExample {
                         string currentTime = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss");
                         string message = $"Maq.: {machineName}\nStatus: {status}\nDescricao: {additionalInfo}\nTime: {currentTime} \n  ---------------";
 
-                        // Registre a mensagem formatada antes de enviá-la
                         LogMessage($" {message}");
 
                         await botClient.SendTextMessageAsync(chatId, message, replyToMessageId: e.Message.MessageId);
@@ -170,9 +169,9 @@ namespace TelegramBotExample {
                 "cris.ferreirak10@gmail.com"
             };
 
-            SendBackupByEmail(Path.Combine(backupFolder, backupFilename), recipients);
+            SendLogByEmail(logFilePath, recipients);
 
-            Console.WriteLine($"Backup e e-mail enviados às {DateTime.Now}");
+            Console.WriteLine($"O Relatorio de e-mail enviado às {DateTime.Now}");
         }
 
         private static void LogMessage(string message) {
@@ -190,6 +189,28 @@ namespace TelegramBotExample {
             catch (Exception ex) {
                 Console.WriteLine($"Erro ao registrar mensagem: {ex.Message}");
             }
+        }
+        private static TimeSpan CalculateTimeUntil8AM() {
+            DateTime now = DateTime.Now;
+            DateTime tomorrow8AM = DateTime.Today.AddDays(1).AddHours(8);
+
+            TimeSpan timeUntil8AM = tomorrow8AM - now;
+            return timeUntil8AM;
+        }
+
+        private static void SendLogByEmailCallback(object state) {
+            var logFolderPath = "C:\\Users\\Cristian\\Gmail\\Log";
+            var logFileName = $"Log_{DateTime.Now:yyyyMMdd}.txt";
+            var logFilePath = Path.Combine(logFolderPath, logFileName);
+
+            List<string> recipients = new List<string> {
+            "cris.ferreirak10@gmail.com"
+            };
+
+            SendLogByEmail(logFilePath, recipients);
+
+            TimeSpan timeUntil8AM = CalculateTimeUntil8AM();
+            _logEmailTimer.Change(timeUntil8AM, Timeout.InfiniteTimeSpan);
         }
     }
 }
